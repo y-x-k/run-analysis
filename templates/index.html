@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Indoor Run Analysis</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+:root{--bg:#0f1117;--surface:#1a1d27;--surface2:#242836;--border:#2e3348;--text:#e4e6f0;--text-dim:#8b8fa8;--accent:#6c8cff;--green:#4ade80;--red:#f87171;--orange:#fb923c;--purple:#a78bfa}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);line-height:1.5;padding:24px;max-width:1400px;margin:0 auto}
+h1{font-size:28px;font-weight:700;margin-bottom:4px}
+.subtitle{color:var(--text-dim);font-size:14px;margin-bottom:24px}
+code{background:var(--surface2);padding:2px 6px;border-radius:4px;font-size:13px}
+
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px}
+.card h3{font-size:15px;font-weight:600;margin-bottom:16px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media(max-width:900px){.grid-2{grid-template-columns:1fr}}
+.chart-container{position:relative;width:100%;height:300px}
+.chart-container.tall{height:350px}
+.empty-msg{color:var(--text-dim);font-size:14px;padding:20px;text-align:center}
+
+.btn{padding:10px 24px;border-radius:8px;border:none;font-size:14px;font-weight:600;cursor:pointer;transition:all .2s}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{filter:brightness(1.15)}
+.btn-primary:disabled{opacity:.4;cursor:not-allowed}
+.btn-danger{background:var(--red);color:#fff}
+.btn-danger:hover{filter:brightness(1.15)}
+
+.upload-zone{border:2px dashed var(--border);border-radius:12px;padding:40px;text-align:center;transition:all .2s;cursor:pointer;background:var(--surface);margin-bottom:20px}
+.upload-zone:hover,.upload-zone.dragover{border-color:var(--accent);background:rgba(108,140,255,.05)}
+.upload-zone p{color:var(--text-dim);margin-top:8px;font-size:14px}
+.upload-zone .icon{font-size:36px;color:var(--accent)}
+
+.filters{display:flex;flex-wrap:wrap;gap:20px;margin-bottom:20px}
+.filter-group{flex:1;min-width:200px;padding:16px;background:var(--surface2);border-radius:10px;border:1px solid var(--border)}
+.filter-group label{font-size:13px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:10px}
+.filter-group .range-labels{display:flex;justify-content:space-between;font-size:13px;color:var(--text);margin-top:6px}
+.filter-group .date-row{display:flex;gap:8px}
+.filter-group .date-row input[type="date"]{flex:1;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px}
+.dual-range{position:relative;height:30px}
+.dual-range input[type="range"]{position:absolute;width:100%;top:0;height:6px;background:transparent;pointer-events:none;-webkit-appearance:none;appearance:none}
+.dual-range input[type="range"]::-webkit-slider-runnable-track{height:6px;border-radius:3px;background:var(--border)}
+.dual-range input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:18px;height:18px;border-radius:50%;background:var(--accent);cursor:pointer;pointer-events:all;border:2px solid var(--surface2);margin-top:-6px}
+.dual-range input[type="range"]::-moz-range-track{height:6px;border-radius:3px;background:var(--border)}
+.dual-range input[type="range"]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:var(--accent);cursor:pointer;pointer-events:all;border:2px solid var(--surface2)}
+.range-active{background:linear-gradient(to right,var(--border),var(--accent) var(--low-pct),var(--accent) var(--high-pct),var(--border) var(--high-pct));height:6px;border-radius:3px;position:absolute;top:12px;left:0;right:0;pointer-events:none}
+
+.session-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:12px}
+.session-count{font-size:14px;color:var(--text-dim)}
+.session-actions{display:flex;gap:8px}
+
+.table-wrap{overflow-x:auto}
+table.sessions{width:100%;border-collapse:collapse;font-size:14px}
+table.sessions th{text-align:left;padding:10px 12px;border-bottom:2px solid var(--border);color:var(--text-dim);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+table.sessions td{padding:10px 12px;border-bottom:1px solid var(--border-color,var(--border))}
+table.sessions tr:last-child td{border-bottom:none}
+table.sessions tr:hover{background:rgba(108,140,255,.04)}
+table.sessions tr.excluded td{opacity:.35}
+table.sessions tr.filtered-out{display:none}
+table.sessions td.date{font-weight:600}
+table.sessions input[type="checkbox"]{width:18px;height:18px;accent-color:var(--accent);cursor:pointer}
+table.sessions .del-btn{background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;padding:4px;border-radius:4px}
+table.sessions .del-btn:hover{background:rgba(248,113,113,.15)}
+
+.summary-table,.ss-table{width:100%;border-collapse:collapse;font-size:14px}
+.summary-table th,.ss-table th{text-align:left;padding:10px 12px;border-bottom:2px solid var(--border);color:var(--text-dim);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+.summary-table td,.ss-table td{padding:10px 12px;border-bottom:1px solid var(--border)}
+.summary-table tr:last-child td,.ss-table tr:last-child td{border-bottom:none}
+.summary-table .best{color:var(--green);font-weight:700}
+.summary-table .worst{color:var(--red)}
+.summary-table .label-col{color:var(--text-dim);font-weight:500}
+.summary-table .session-col,.ss-table td{text-align:center}
+.ss-table th{text-align:center}
+.ss-table th:first-child,.ss-table td:first-child{text-align:left;color:var(--text-dim);font-weight:500}
+.drift-pos{color:var(--orange)}
+.drift-neg{color:var(--green)}
+
+.leaderboard{display:flex;flex-direction:column;gap:8px}
+.lb-row{display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--surface2);border-radius:8px}
+.lb-rank{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0}
+.lb-rank.gold{background:#facc15;color:#000}
+.lb-rank.silver{background:#94a3b8;color:#000}
+.lb-rank.bronze{background:#d97706;color:#000}
+.lb-rank.other{background:var(--border);color:var(--text-dim)}
+.lb-label{font-weight:600;flex:1}
+.lb-value{font-weight:700;font-size:16px}
+.lb-unit{color:var(--text-dim);font-size:13px;margin-left:4px}
+.lb-bar-bg{flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden}
+.lb-bar{height:100%;border-radius:3px;transition:width .4s ease}
+.upload-error{color:var(--red);font-size:13px;margin-top:8px}
+.upload-success{color:var(--green);font-size:13px;margin-top:8px}
+  .spinner{display:inline-block;width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin-right:8px;vertical-align:middle}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<h1>Indoor Run Analysis</h1>
+<p class="subtitle">Upload <code>.fit</code> files to analyze your indoor runs.</p>
+
+<div class="upload-zone" id="uploadZone">
+  <div class="icon">&#x1F4C1;</div>
+  <p><strong>Drop .fit files here</strong> or click to browse</p>
+  <p style="font-size:12px;margin-top:4px">Select one or more files</p>
+  <input type="file" id="fileInput" accept=".fit" multiple style="display:none">
+  <div id="uploadStatus"></div>
+</div>
+
+<div class="card">
+  <div class="session-header">
+    <div>
+      <h3>Sessions</h3>
+      <span class="session-count" id="sessionCount">No sessions loaded</span>
+    </div>
+    <div class="session-actions">
+      <button class="btn btn-primary" id="selectAllBtn" onclick="toggleSelectAll()">Select All</button>
+      <button class="btn btn-danger" id="deleteSelectedBtn" onclick="deleteSelected()" style="display:none">Delete Selected</button>
+    </div>
+  </div>
+
+  <div class="filters" id="filtersSection" style="display:none">
+    <div class="filter-group">
+      <label>Avg Speed (km/h)</label>
+      <div class="dual-range">
+        <div class="range-active" id="speedRangeTrack"></div>
+        <input type="range" id="speedMin" min="0" max="30" step="0.1" oninput="updateTracksVisual()" onmouseup="updateTracksOnly()" ontouchend="updateTracksOnly()">
+        <input type="range" id="speedMax" min="0" max="30" step="0.1" oninput="updateTracksVisual()" onmouseup="updateTracksOnly()" ontouchend="updateTracksOnly()">
+      </div>
+      <div class="range-labels"><span id="speedMinLabel">0</span><span id="speedMaxLabel">30</span></div>
+    </div>
+    <div class="filter-group">
+      <label>Date</label>
+      <div class="date-row">
+        <input type="date" id="dateFrom" onchange="applyFilters()">
+        <input type="date" id="dateTo" onchange="applyFilters()">
+      </div>
+    </div>
+    <div class="filter-group">
+      <label>Duration (min)</label>
+      <div class="dual-range">
+        <div class="range-active" id="durationRangeTrack"></div>
+        <input type="range" id="durationMin" min="0" max="180" step="0.5" oninput="updateTracksVisual()" onmouseup="updateTracksOnly()" ontouchend="updateTracksOnly()">
+        <input type="range" id="durationMax" min="0" max="180" step="0.5" oninput="updateTracksVisual()" onmouseup="updateTracksOnly()" ontouchend="updateTracksOnly()">
+      </div>
+      <div class="range-labels"><span id="durationMinLabel">0</span><span id="durationMaxLabel">180</span></div>
+    </div>
+    <div class="filter-group">
+      <label>Analysis Window (min)</label>
+      <div class="dual-range">
+        <div class="range-active" id="windowRangeTrack"></div>
+        <input type="range" id="windowStart" min="0" max="60" step="0.5" oninput="updateTracksVisual()" onmouseup="updateTracksOnly()" ontouchend="updateTracksOnly()">
+        <input type="range" id="windowEnd" min="0" max="60" step="0.5" oninput="updateTracksVisual()" onmouseup="updateTracksOnly()" ontouchend="updateTracksOnly()">
+      </div>
+      <div class="range-labels"><span id="windowStartLabel">0</span><span id="windowEndLabel">60</span></div>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table class="sessions">
+      <thead><tr>
+        <th style="width:40px"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()"></th>
+        <th>Date</th>
+        <th>Duration</th>
+        <th>Distance</th>
+        <th>Avg Speed</th>
+        <th>Avg HR</th>
+        <th style="width:50px"></th>
+      </tr></thead>
+      <tbody id="sessionsBody"></tbody>
+    </table>
+    <div id="vizSpinner" class="empty-msg" style="display:none">
+      <div class="spinner"></div>
+      <span>Computing...</span>
+    </div>
+  </div>
+</div>
+
+<div id="vizSection" style="display:none">
+  <div class="card">
+    <h3>Summary</h3>
+    <p style="color:var(--text-dim);font-size:13px;margin:-12px 0 16px">All stats use the selected <strong>analysis window</strong>. Use the slider above to adjust the start and end time.</p>
+    <div style="overflow-x:auto"><table class="summary-table" id="summaryTable"></table></div>
+  </div>
+  <div class="grid-2">
+    <div class="card"><h3>Heart Rate Over Time</h3><div class="chart-container tall"><canvas id="chartHR"></canvas></div></div>
+    <div class="card"><h3>Speed Over Time</h3><div class="chart-container tall"><canvas id="chartSpeed"></canvas></div></div>
+  </div>
+  <div class="grid-2">
+    <div class="card"><h3>Cadence Over Time</h3><div class="chart-container tall"><canvas id="chartCadence"></canvas></div></div>
+    <div class="card"><h3>Distance Accumulation</h3><div class="chart-container tall"><canvas id="chartDistance"></canvas></div></div>
+  </div>
+  <div class="grid-2">
+    <div class="card"><h3>Heart Rate Distribution</h3><div class="chart-container tall"><canvas id="chartHRDist"></canvas></div></div>
+    <div class="card"><h3>Heart Rate Zone Distribution</h3><div class="chart-container tall"><canvas id="chartHRZones"></canvas></div></div>
+  </div>
+  <div class="grid-2">
+    <div class="card"><h3>Steady-State HR</h3><div class="chart-container tall"><canvas id="chartSteadyState"></canvas></div></div>
+    <div class="card"><h3>HR Drift by 5-Min Block</h3><div class="chart-container tall"><canvas id="chartDrift"></canvas></div></div>
+  </div>
+  <div class="grid-2">
+    <div class="card"><h3>Leaderboard: Steady-State HR (lower is better)</h3><div id="lbHR" class="leaderboard"></div></div>
+    <div class="card"><h3>Leaderboard: Cadence (higher is better)</h3><div id="lbCadence" class="leaderboard"></div></div>
+  </div>
+  <div class="card">
+    <h3>Steady-State Comparison Table</h3>
+    <div style="overflow-x:auto"><table class="ss-table" id="ssTable"></table></div>
+  </div>
+</div>
+
+<script>
+var COLORS=["#6c8cff","#f87171","#4ade80","#a78bfa","#fb923c","#22d3ee","#facc15","#f472b6","#34d399","#e879f9"];
+var ZONE_NAMES=["Z1 <110","Z2 110-130","Z3 130-150","Z4 150-165","Z5 165+"];
+
+var allSessions = [];
+var charts = {};
+var debounceTimer = null;
+var debounceVizTimer = null;
+function debounced(fn, ms){
+  return function(){
+    var args = arguments;
+    var ctx = this;
+    if(debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(function(){fn.apply(ctx, args)}, ms);
+  };
+}
+var debouncedUpdateViz = function(){
+  var spinner = document.getElementById('vizSpinner');
+  if(spinner) spinner.style.display = 'block';
+  if(debounceVizTimer) clearTimeout(debounceVizTimer);
+  debounceVizTimer = setTimeout(function(){
+    updateViz();
+    if(spinner) spinner.style.display = 'none';
+  }, 250);
+};
+
+function updateTracksVisual(){
+  var speedMin = parseFloat(document.getElementById('speedMin').value);
+  var speedMax = parseFloat(document.getElementById('speedMax').value);
+  var durMin = parseFloat(document.getElementById('durationMin').value);
+  var durMax = parseFloat(document.getElementById('durationMax').value);
+  var winStart = parseFloat(document.getElementById('windowStart').value);
+  var winEnd = parseFloat(document.getElementById('windowEnd').value);
+
+  document.getElementById('speedMinLabel').textContent = speedMin.toFixed(1);
+  document.getElementById('speedMaxLabel').textContent = speedMax.toFixed(1);
+  document.getElementById('durationMinLabel').textContent = durMin.toFixed(0);
+  document.getElementById('durationMaxLabel').textContent = durMax.toFixed(0);
+  document.getElementById('windowStartLabel').textContent = winStart.toFixed(1);
+  document.getElementById('windowEndLabel').textContent = winEnd.toFixed(1);
+
+  var sTrack = document.getElementById('speedRangeTrack');
+  var sMinEl = document.getElementById('speedMin');
+  var sMaxEl = document.getElementById('speedMax');
+  var sLo = (speedMin - parseFloat(sMinEl.min)) / (parseFloat(sMinEl.max) - parseFloat(sMinEl.min)) * 100;
+  var sHi = (speedMax - parseFloat(sMaxEl.min)) / (parseFloat(sMaxEl.max) - parseFloat(sMaxEl.min)) * 100;
+  sTrack.style.setProperty('--low-pct', sLo+'%');
+  sTrack.style.setProperty('--high-pct', sHi+'%');
+
+  var dTrack = document.getElementById('durationRangeTrack');
+  var dMinEl = document.getElementById('durationMin');
+  var dMaxEl = document.getElementById('durationMax');
+  var dLo = (durMin - parseFloat(dMinEl.min)) / (parseFloat(dMinEl.max) - parseFloat(dMinEl.min)) * 100;
+  var dHi = (durMax - parseFloat(dMaxEl.min)) / (parseFloat(dMaxEl.max) - parseFloat(dMaxEl.min)) * 100;
+  dTrack.style.setProperty('--low-pct', dLo+'%');
+  dTrack.style.setProperty('--high-pct', dHi+'%');
+
+  var wTrack = document.getElementById('windowRangeTrack');
+  var wMinEl = document.getElementById('windowStart');
+  var wMaxEl = document.getElementById('windowEnd');
+  var wLo = (winStart - parseFloat(wMinEl.min)) / (parseFloat(wMinEl.max) - parseFloat(wMinEl.min)) * 100;
+  var wHi = (winEnd - parseFloat(wMaxEl.min)) / (parseFloat(wMaxEl.max) - parseFloat(wMaxEl.min)) * 100;
+  wTrack.style.setProperty('--low-pct', wLo+'%');
+  wTrack.style.setProperty('--high-pct', wHi+'%');
+}
+
+function updateTracksOnly(){
+  updateTracksVisual();
+  renderSessions();
+  debouncedUpdateViz();
+}
+
+function colorForIdx(i){return COLORS[i%COLORS.length]}
+
+var winStart = 0, winEnd = 30;
+var _windowedCache = null;
+var _windowedCacheKey = '';
+
+function computeSessionForWindow(s, lo, hi){
+  var t = (s.series&&s.series.time_min)||[];
+  var sr = s.series;
+  var hrv=[], spdv=[], cadv=[], distv=[], ssHr=[], blocks=[[],[],[],[]];
+  var ssLo = lo + 10;
+  var blk = (hi - ssLo) / 4 || 1;
+  for(var i=0;i<t.length;i++){
+    if(t[i]<lo||t[i]>hi) continue;
+    var h=sr.heart_rate[i], sp=sr.speed_kmh[i], cd=sr.cadence[i], di=sr.distance_km[i];
+    if(h!=null){
+      hrv.push(h);
+      if(t[i] >= ssLo){
+        ssHr.push(h);
+        var bi=Math.min(Math.floor((t[i]-ssLo)/blk),3);
+        blocks[bi].push(h);
+      }
+    }
+    if(sp!=null) spdv.push(sp);
+    if(cd!=null) cadv.push(cd);
+    if(di!=null) distv.push(di);
+  }
+  var w = Object.assign({}, s);
+  var stats = {};
+  if(hrv.length){
+    var s1=0; for(var k=0;k<hrv.length;k++) s1+=hrv[k]; var m=s1/hrv.length; var v=0; for(var k=0;k<hrv.length;k++) v+=(hrv[k]-m)*(hrv[k]-m);
+    stats.hr_avg=Math.round(m); stats.hr_max=Math.max.apply(null,hrv); stats.hr_min=Math.min.apply(null,hrv); stats.hr_std=Math.round(Math.sqrt(v/hrv.length)*10)/10;
+  }
+  if(spdv.length){ var s1=0; for(var k=0;k<spdv.length;k++) s1+=spdv[k]; stats.speed_avg_kmh=Math.round(s1/spdv.length*10)/10; stats.speed_max_kmh=Math.round(Math.max.apply(null,spdv)*10)/10; }
+  if(cadv.length){ var s1=0; for(var k=0;k<cadv.length;k++) s1+=cadv[k]; stats.cadence_avg=Math.round(s1/cadv.length); stats.cadence_max=Math.max.apply(null,cadv); }
+  if(distv.length) stats.distance_km=Math.round(distv[distv.length-1]*100)/100;
+  w.stats = stats;
+
+  var ss = {};
+  if(ssHr.length){
+    var s1=0; for(var k=0;k<ssHr.length;k++) s1+=ssHr[k]; var m=s1/ssHr.length; var v=0; for(var k=0;k<ssHr.length;k++) v+=(ssHr[k]-m)*(ssHr[k]-m);
+    ss.steady_hr_avg=Math.round(m); ss.steady_hr_min=Math.min.apply(null,ssHr); ss.steady_hr_max=Math.max.apply(null,ssHr); ss.steady_hr_std=Math.round(Math.sqrt(v/ssHr.length)*10)/10;
+  }
+  ss.block_avgs=blocks.map(function(b){if(!b.length)return null;var s1=0;for(var k=0;k<b.length;k++) s1+=b[k];return Math.round(s1/b.length);});
+  if(ss.block_avgs[0]!=null&&ss.block_avgs[3]!=null) ss.hr_drift=ss.block_avgs[3]-ss.block_avgs[0];
+  w.steady_state = ss;
+
+  var z = {};
+  if(hrv.length){
+    var zLo=[0,110,130,150,165], zHi=[110,130,150,165,250], zN=['zone1','zone2','zone3','zone4','zone5'];
+    for(var zi=0;zi<5;zi++){ var c=0; for(var k=0;k<hrv.length;k++) if(hrv[k]>=zLo[zi]&&hrv[k]<zHi[zi]) c++; z[zN[zi]]=Math.round(c/hrv.length*1000)/10; }
+  }
+  w.hr_zones = z;
+
+  var hrd = {bins_center:[], counts:[]};
+  if(hrv.length){
+    var bins=20, mn=Math.min.apply(null,hrv), mx=Math.max.apply(null,hrv), pad=(mx-mn)*0.1||5, lo=mn-pad, hi=mx+pad, bw=(hi-lo)/bins||1, cnts=new Array(bins).fill(0);
+    for(var k=0;k<hrv.length;k++) cnts[Math.min(Math.floor((hrv[k]-lo)/bw),bins-1)]++;
+    var tot=hrv.length; var cents=[];
+    for(var i=0;i<bins;i++){ cents.push(Math.round((lo+(i+0.5)*bw)*10)/10); cnts[i]=Math.round(cnts[i]/tot*10000)/10000; }
+    hrd = {bins_center:cents, counts:cnts};
+  }
+  w.hr_distribution = hrd;
+  return w;
+}
+
+// --- Upload ---
+var uploadZone = document.getElementById('uploadZone');
+var fileInput = document.getElementById('fileInput');
+uploadZone.addEventListener('click', function(e){
+  if(e.target.tagName!=='INPUT') fileInput.click();
+});
+uploadZone.addEventListener('dragover', function(e){e.preventDefault();uploadZone.classList.add('dragover')});
+uploadZone.addEventListener('dragleave', function(){uploadZone.classList.remove('dragover')});
+uploadZone.addEventListener('drop', function(e){
+  e.preventDefault();
+  uploadZone.classList.remove('dragover');
+  if(e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change', function(){if(this.files.length) handleFiles(this.files)});
+
+async function handleFiles(files){
+  var formData = new FormData();
+  for(var i=0;i<files.length;i++) formData.append('files', files[i]);
+  var statusEl = document.getElementById('uploadStatus');
+  statusEl.innerHTML = '<span style="color:var(--text-dim)">Uploading and parsing...</span>';
+  try{
+    var resp = await fetch('/api/upload', {method:'POST', body:formData});
+    var data = await resp.json();
+    if(data.ok){
+      var msgs = [];
+      if(data.sessions.length) msgs.push(data.sessions.length+' session(s) parsed successfully');
+      if(data.errors.length) msgs.push(data.errors.length+' error(s): '+data.errors.join('; '));
+      statusEl.innerHTML = '<span class="upload-success">'+msgs.join('. ')+'</span>';
+      await loadSessions();
+    }else{
+      statusEl.innerHTML = '<span class="upload-error">Upload failed: '+data.error+'</span>';
+    }
+  }catch(e){
+    statusEl.innerHTML = '<span class="upload-error">Upload error: '+e.message+'</span>';
+  }
+}
+
+// --- Load Sessions ---
+async function loadSessions(){
+  try{
+    var resp = await fetch('/api/sessions');
+    allSessions = await resp.json();
+    renderSessions();
+    setupFilters();
+    updateViz();
+  }catch(e){
+    console.error('Failed to load sessions', e);
+  }
+}
+
+// --- Session Toggle ---
+async function toggleSession(id){
+  var s = allSessions.find(function(x){return x.id===id});
+  if(!s) return;
+  s.included = s.included ? 0 : 1;
+  try{
+    await fetch('/api/sessions/'+id, {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({included:!!s.included})});
+    renderSessions();
+    debouncedUpdateViz();
+  }catch(e){console.error(e)}
+}
+
+// --- Delete Session ---
+async function deleteSession(id){
+  if(!confirm('Delete this session?')) return;
+  try{
+    await fetch('/api/sessions/'+id, {method:'DELETE'});
+    allSessions = allSessions.filter(function(s){return s.id!==id});
+    renderSessions();
+    setupFilters();
+    updateViz();
+  }catch(e){console.error(e)}
+}
+
+async function deleteSelected(){
+  var selected = allSessions.filter(function(s){return !s.included});
+  if(!selected.length) return;
+  if(!confirm('Delete '+selected.length+' unselected session(s)?')) return;
+  for(var i=0;i<selected.length;i++){
+    try{
+      await fetch('/api/sessions/'+selected[i].id, {method:'DELETE'});
+    }catch(e){console.error(e)}
+  }
+  allSessions = allSessions.filter(function(s){return s.included});
+  renderSessions();
+  setupFilters();
+  updateViz();
+}
+
+function toggleSelectAll(){
+  var checked = document.getElementById('selectAllCheckbox').checked;
+  allSessions.forEach(function(s){s.included = checked ? 1 : 0});
+  // Batch update on server
+  allSessions.forEach(async function(s){
+    try{
+      await fetch('/api/sessions/'+s.id, {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({included:!!s.included})});
+    }catch(e){console.error(e)}
+  });
+  renderSessions();
+  updateViz();
+}
+
+// --- Filter Logic ---
+function readFilterState(){
+  return {
+    speedMin: parseFloat(document.getElementById('speedMin').value),
+    speedMax: parseFloat(document.getElementById('speedMax').value),
+    durMin: parseFloat(document.getElementById('durationMin').value),
+    durMax: parseFloat(document.getElementById('durationMax').value),
+    dateFrom: document.getElementById('dateFrom').value,
+    dateTo: document.getElementById('dateTo').value,
+    winStart: parseFloat(document.getElementById('windowStart').value),
+    winEnd: parseFloat(document.getElementById('windowEnd').value),
+  };
+}
+
+function filterVisibleSessions(state){
+  state = state || readFilterState();
+  return allSessions.filter(function(s){
+    if(!s.included) return false;
+    var spd = s.stats && s.stats.speed_avg_kmh;
+    if(spd!=null && (spd<state.speedMin || spd>state.speedMax)) return false;
+    var dur = s.total_elapsed_time_s ? s.total_elapsed_time_s/60 : null;
+    if(dur!=null && (dur<state.durMin || dur>state.durMax)) return false;
+    if(state.dateFrom && s.label && s.label < state.dateFrom) return false;
+    if(state.dateTo && s.label && s.label > state.dateTo) return false;
+    return true;
+  });
+}
+
+function getVisibleSessions(){
+  var st = readFilterState();
+  winStart = st.winStart; winEnd = st.winEnd;
+  if(winStart > winEnd){ var t=winStart; winStart=winEnd; winEnd=t; st.winStart=winStart; st.winEnd=winEnd }
+  if(winStart < 0) winStart = 0;
+  if(winEnd < 0) winEnd = 0;
+
+  var filtered = filterVisibleSessions(st);
+
+  var key = winStart+','+winEnd+','+filtered.map(function(s){return s.id}).join('|');
+  if(_windowedCache && _windowedCacheKey === key) return _windowedCache;
+  _windowedCacheKey = key;
+  _windowedCache = filtered.map(function(s){
+    var w = s.series ? computeSessionForWindow(s, winStart, winEnd) : s;
+    w._origIdx = allSessions.indexOf(s);
+    return w;
+  });
+  return _windowedCache;
+}
+
+// --- Render Sessions Table ---
+function renderSessions(){
+  var tbody = document.getElementById('sessionsBody');
+  var selectedCount = allSessions.filter(function(s){return s.included}).length;
+  document.getElementById('sessionCount').textContent = allSessions.length+' session(s), '+selectedCount+' selected';
+  document.getElementById('selectAllCheckbox').checked = selectedCount === allSessions.length && allSessions.length > 0;
+  document.getElementById('deleteSelectedBtn').style.display = selectedCount < allSessions.length ? 'inline-block' : 'none';
+  document.getElementById('filtersSection').style.display = allSessions.length ? 'block' : 'none';
+  if(!allSessions.length){
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-msg">No sessions yet. Upload .fit files to get started.</td></tr>';
+    return;
+  }
+
+  var visibleArr = filterVisibleSessions();
+  if(!visibleArr.length){
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-msg">No sessions match the current filters.</td></tr>';
+    return;
+  }
+  var visibleIds = {};
+  visibleArr.forEach(function(s){visibleIds[s.id]=true});
+
+  var html = '';
+  allSessions.forEach(function(s){
+    var idx = allSessions.indexOf(s);
+    var color = colorForIdx(idx);
+    var dur = s.total_elapsed_time_s ? (s.total_elapsed_time_s/60).toFixed(1)+' min' : 'N/A';
+    var dist = s.stats && s.stats.distance_km != null ? s.stats.distance_km.toFixed(2)+' km' : 'N/A';
+    var spd = s.stats && s.stats.speed_avg_kmh != null ? s.stats.speed_avg_kmh.toFixed(1)+' km/h' : 'N/A';
+    var hr = s.stats && s.stats.hr_avg != null ? s.stats.hr_avg+' bpm' : 'N/A';
+    var excluded = !s.included ? 'excluded' : '';
+    var filteredOut = s.included && !visibleIds[s.id] ? 'filtered-out' : '';
+    html += '<tr class="'+excluded+' '+filteredOut+'" data-id="'+s.id+'">';
+    html += '<td><input type="checkbox" '+(s.included?'checked':'')+' onchange="toggleSession('+s.id+')"></td>';
+    html += '<td class="date" style="color:'+color+'">'+s.label+'</td>';
+    html += '<td>'+dur+'</td>';
+    html += '<td>'+dist+'</td>';
+    html += '<td>'+spd+'</td>';
+    html += '<td>'+hr+'</td>';
+    html += '<td><button class="del-btn" onclick="deleteSession('+s.id+')" title="Delete">&#x2715;</button></td>';
+    html += '</tr>';
+  });
+  tbody.innerHTML = html;
+}
+
+// --- Setup Filters ---
+function setupFilters(){
+  if(!allSessions.length) return;
+  var speeds = allSessions.map(function(s){return s.stats && s.stats.speed_avg_kmh}).filter(function(v){return v!=null});
+  var durs = allSessions.map(function(s){return s.total_elapsed_time_s ? s.total_elapsed_time_s/60 : null}).filter(function(v){return v!=null});
+  var dates = allSessions.map(function(s){return s.label}).filter(Boolean).sort();
+  var speedMin = speeds.length ? Math.floor(Math.min.apply(null, speeds)) : 0;
+  var speedMax = speeds.length ? Math.ceil(Math.max.apply(null, speeds)) : 30;
+  var durMin = durs.length ? Math.floor(Math.min.apply(null, durs)) : 0;
+  var durMax = durs.length ? Math.ceil(Math.max.apply(null, durs)) : 180;
+  var dateMin = dates.length ? dates[0] : '';
+  var dateMax = dates.length ? dates[dates.length-1] : '';
+  document.getElementById('speedMin').min = speedMin;
+  document.getElementById('speedMin').max = speedMax;
+  document.getElementById('speedMin').value = speedMin;
+  document.getElementById('speedMax').min = speedMin;
+  document.getElementById('speedMax').max = speedMax;
+  document.getElementById('speedMax').value = speedMax;
+  document.getElementById('durationMin').min = durMin;
+  document.getElementById('durationMin').max = durMax;
+  document.getElementById('durationMin').value = durMin;
+  document.getElementById('durationMax').min = durMin;
+  document.getElementById('durationMax').max = durMax;
+  document.getElementById('durationMax').value = durMax;
+  document.getElementById('dateFrom').value = dateMin;
+  document.getElementById('dateFrom').min = dateMin;
+  document.getElementById('dateFrom').max = dateMax;
+  document.getElementById('dateTo').value = dateMax;
+  document.getElementById('dateTo').min = dateMin;
+  document.getElementById('dateTo').max = dateMax;
+
+  var included = allSessions.filter(function(s){return s.included});
+  var maxDur = Math.max.apply(null, included.map(function(s){
+    return s.total_elapsed_time_s ? s.total_elapsed_time_s/60 : 0;
+  })) || 60;
+  document.getElementById('windowEnd').max = Math.ceil(maxDur);
+  document.getElementById('windowEnd').value = Math.min(30, Math.ceil(maxDur));
+  document.getElementById('windowStart').max = Math.ceil(maxDur);
+  document.getElementById('windowStart').value = 0;
+
+  applyFilters();
+}
+
+function applyFilters(){
+  var speedMin = parseFloat(document.getElementById('speedMin').value);
+  var speedMax = parseFloat(document.getElementById('speedMax').value);
+  var durMin = parseFloat(document.getElementById('durationMin').value);
+  var durMax = parseFloat(document.getElementById('durationMax').value);
+  var winStart = parseFloat(document.getElementById('windowStart').value);
+  var winEnd = parseFloat(document.getElementById('windowEnd').value);
+  if(speedMin > speedMax){
+    var tmp = speedMin; speedMin = speedMax; speedMax = tmp;
+    document.getElementById('speedMin').value = speedMin;
+    document.getElementById('speedMax').value = speedMax;
+  }
+  if(durMin > durMax){
+    var tmp = durMin; durMin = durMax; durMax = tmp;
+    document.getElementById('durationMin').value = durMin;
+    document.getElementById('durationMax').value = durMax;
+  }
+  if(winStart > winEnd){
+    var tmp = winStart; winStart = winEnd; winEnd = tmp;
+    document.getElementById('windowStart').value = winStart;
+    document.getElementById('windowEnd').value = winEnd;
+  }
+  updateTracksOnly();
+}
+
+// --- Visualization (ported from report.html) ---
+function destroyChart(name){if(charts[name]){charts[name].destroy();charts[name]=null}}
+
+function chartOpts(xTitle,yTitle,lo,hi){
+  var o = {responsive:true,maintainAspectRatio:false,
+    scales:{x:{type:'linear',title:{display:true,text:xTitle,color:'#8b8fa8'},ticks:{color:'#8b8fa8'},grid:{color:'#2e334822'}},
+            y:{title:{display:true,text:yTitle,color:'#8b8fa8'},ticks:{color:'#8b8fa8'},grid:{color:'#2e334844'}}},
+    plugins:{legend:{labels:{color:'#e4e6f0',usePointStyle:true,pointStyle:'circle'}}}};
+  if(lo!=null) o.scales.x.min=lo;
+  if(hi!=null) o.scales.x.max=hi;
+  return o;
+}
+
+function currentSessions(){return getVisibleSessions()}
+
+function colorForSession(s){
+  var i = s._origIdx;
+  if(i == null) i = allSessions.indexOf(s);
+  return colorForIdx(i >= 0 ? i : 0);
+}
+
+function makeTimeDatasets(field){
+  var lo=winStart, hi=winEnd;
+  return currentSessions().map(function(s){
+    var pts=[];
+    if(!s.series) return {label:s.label,data:[],borderColor:colorForSession(s),backgroundColor:'transparent',borderWidth:1.5,pointRadius:0,tension:0.3};
+    s.series.time_min.forEach(function(t,j){
+      if(t>=lo&&t<=hi&&s.series[field][j]!=null)pts.push({x:t,y:s.series[field][j]});
+    });
+    return{label:s.label,data:pts,borderColor:colorForSession(s),backgroundColor:'transparent',borderWidth:1.5,pointRadius:0,tension:0.3};
+  });
+}
+
+function blockNames(lo,hi){
+  var s=(hi-lo)/4;
+  return [
+    (lo).toFixed(1)+'-'+(lo+s).toFixed(1),
+    (lo+s).toFixed(1)+'-'+(lo+2*s).toFixed(1),
+    (lo+2*s).toFixed(1)+'-'+(lo+3*s).toFixed(1),
+    (lo+3*s).toFixed(1)+'-'+(lo+4*s).toFixed(1),
+  ];
+}
+
+function updateHR(){destroyChart('hr');var ss=currentSessions();if(!ss.length)return;charts.hr=new Chart(document.getElementById('chartHR'),{type:'line',data:{datasets:makeTimeDatasets('heart_rate')},options:chartOpts('Time (min)','Heart Rate (bpm)',winStart,winEnd)})}
+function updateSpeed(){destroyChart('spd');var ss=currentSessions();if(!ss.length)return;charts.spd=new Chart(document.getElementById('chartSpeed'),{type:'line',data:{datasets:makeTimeDatasets('speed_kmh')},options:chartOpts('Time (min)','Speed (km/h)',winStart,winEnd)})}
+function updateCadence(){destroyChart('cad');var ss=currentSessions();if(!ss.length)return;charts.cad=new Chart(document.getElementById('chartCadence'),{type:'line',data:{datasets:makeTimeDatasets('cadence')},options:chartOpts('Time (min)','Cadence (spm)',winStart,winEnd)})}
+function updateDistance(){destroyChart('dist');var ss=currentSessions();if(!ss.length)return;charts.dist=new Chart(document.getElementById('chartDistance'),{type:'line',data:{datasets:makeTimeDatasets('distance_km')},options:chartOpts('Time (min)','Distance (km)',winStart,winEnd)})}
+
+function updateHRDist(){
+  destroyChart('hrdist');
+  var ss=currentSessions();if(!ss.length)return;
+  var ds=ss.map(function(s){
+    if(!s.hr_distribution) return {label:s.label,data:[],borderColor:colorForSession(s),backgroundColor:colorForSession(s)+'33',borderWidth:1.5,pointRadius:0,fill:true,tension:0.4};
+    var pts=s.hr_distribution.bins_center.map(function(b,j){return{x:b,y:s.hr_distribution.counts[j]}});
+    return{label:s.label,data:pts,borderColor:colorForSession(s),backgroundColor:colorForSession(s)+'33',borderWidth:1.5,pointRadius:0,fill:true,tension:0.4};
+  });
+  charts.hrdist=new Chart(document.getElementById('chartHRDist'),{type:'line',data:{datasets:ds},options:chartOpts('Heart Rate (bpm)','Density',null,null)});
+}
+
+function updateHRZones(){
+  destroyChart('hrzones');
+  var ss=currentSessions();if(!ss.length)return;
+  var zoneKeys=['zone1','zone2','zone3','zone4','zone5'];
+  var ds=ss.map(function(s){return{label:s.label,data:zoneKeys.map(function(k){return s.hr_zones[k]||0}),backgroundColor:colorForSession(s)+'cc',borderColor:colorForSession(s),borderWidth:1,borderRadius:4}});
+  charts.hrzones=new Chart(document.getElementById('chartHRZones'),{type:'bar',data:{labels:ZONE_NAMES,datasets:ds},options:{responsive:true,maintainAspectRatio:false,scales:{x:{ticks:{color:'#8b8fa8'},grid:{display:false}},y:{title:{display:true,text:'Time in Zone (%)',color:'#8b8fa8'},ticks:{color:'#8b8fa8'},grid:{color:'#2e334844'}}},plugins:{legend:{labels:{color:'#e4e6f0',usePointStyle:true,pointStyle:'circle'}}}}});
+}
+
+function updateSteadyState(){
+  destroyChart('ss');
+  var ss=currentSessions();if(!ss.length)return;
+  var bNames = blockNames(winStart + 10, winEnd);
+  var ds=ss.map(function(s){return{label:s.label,data:s.steady_state.block_avgs.map(function(v,j){return v!=null?{x:bNames[j],y:v}:null}).filter(Boolean),borderColor:colorForSession(s),backgroundColor:colorForSession(s)+'33',borderWidth:2,pointRadius:5,pointBackgroundColor:colorForSession(s),tension:0.2,fill:false}});
+  charts.ss=new Chart(document.getElementById('chartSteadyState'),{type:'line',data:{labels:bNames,datasets:ds},options:{responsive:true,maintainAspectRatio:false,scales:{x:{title:{display:true,text:'Block ('+(winStart+10)+'-'+winEnd+' min)',color:'#8b8fa8'},ticks:{color:'#8b8fa8'},grid:{color:'#2e334822'}},y:{title:{display:true,text:'Avg HR (bpm)',color:'#8b8fa8'},ticks:{color:'#8b8fa8'},grid:{color:'#2e334844'}}},plugins:{legend:{labels:{color:'#e4e6f0',usePointStyle:true,pointStyle:'circle'}}}}});
+}
+
+function updateDrift(){
+  destroyChart('drift');
+  var ss=currentSessions();if(!ss.length)return;
+  var bNames = blockNames(winStart + 10, winEnd);
+  var ds=ss.map(function(s){return{label:s.label,data:s.steady_state.block_avgs.map(function(v,j){return v!=null?{x:bNames[j],y:v}:null}).filter(Boolean),backgroundColor:colorForSession(s)+'cc',borderColor:colorForSession(s),borderWidth:1,borderRadius:4}});
+  charts.drift=new Chart(document.getElementById('chartDrift'),{type:'bar',data:{labels:bNames,datasets:ds},options:{responsive:true,maintainAspectRatio:false,scales:{x:{ticks:{color:'#8b8fa8'},grid:{display:false}},y:{title:{display:true,text:'Avg HR (bpm)',color:'#8b8fa8'},ticks:{color:'#8b8fa8'},grid:{color:'#2e334844'}}},plugins:{legend:{labels:{color:'#e4e6f0',usePointStyle:true,pointStyle:'circle'}}}}});
+}
+
+function updateSummary(){
+  var ss=currentSessions();
+  var t=document.getElementById('summaryTable');
+  if(!ss.length){t.innerHTML='<tr><td class="empty-msg">No sessions match filters</td></tr>';return}
+  var metrics=[
+    {label:'Session',fn:function(s){return s.label}},
+    {label:'Duration',fn:function(s){return s.total_elapsed_time_s?(s.total_elapsed_time_s/60).toFixed(1)+' min':'N/A'}},
+    {label:'Distance (km)',fn:function(s){var v=s.stats.distance_km;return v!=null?v.toFixed(2):'N/A'},lower:false},
+    {label:'Avg HR (bpm)',fn:function(s){return s.stats.hr_avg||'N/A'},lower:true},
+    {label:'Max HR (bpm)',fn:function(s){return s.stats.hr_max||'N/A'},lower:true},
+    {label:'Steady HR (bpm)',fn:function(s){return s.steady_state.steady_hr_avg||'N/A'},lower:true},
+    {label:'Avg Speed (km/h)',fn:function(s){return s.stats.speed_avg_kmh||'N/A'}},
+    {label:'Avg Cadence (spm)',fn:function(s){return s.stats.cadence_avg||'N/A'}},
+    {label:'Calories',fn:function(s){return s.total_calories||'N/A'}},
+    {label:'Temperature (C)',fn:function(s){return s.avg_temperature||'N/A'}},
+    {label:'HR Drift (bpm)',fn:function(s){var v=s.steady_state.hr_drift;return v!=null?(v>0?'+'+v:v):'N/A'}},
+  ];
+  var html='<thead><tr><th></th>';
+  ss.forEach(function(s){html+='<th class="session-col"><span style="color:'+colorForSession(s)+'">&#9679;</span> '+s.label+'</th>'});
+  html+='</tr></thead><tbody>';
+  metrics.forEach(function(m){
+    var vals=ss.map(m.fn);
+    var numVals=vals.filter(function(v){return typeof v==='number'});
+    var bestVal=m.lower?Math.min.apply(null,numVals):null;
+    var worstVal=m.lower?Math.max.apply(null,numVals):null;
+    html+='<tr><td class="label-col">'+m.label+'</td>';
+    vals.forEach(function(v){
+      var cls='session-col';
+      if(typeof v==='number'&&v===bestVal)cls+=' best';
+      if(typeof v==='number'&&v===worstVal)cls+=' worst';
+      html+='<td class="'+cls+'">'+v+'</td>';
+    });
+    html+='</tr>';
+  });
+  html+='</tbody>';
+  t.innerHTML=html;
+}
+
+function updateLeaderboard(id,dataFn,unit,lower){
+  var c=document.getElementById(id);
+  var ss=currentSessions();
+  if(!ss.length){c.innerHTML='';return}
+  var items=ss.map(function(s){return{label:s.label,val:dataFn(s),color:colorForSession(s)}}).filter(function(s){return s.val!=null});
+  items.sort(function(a,b){return lower?a.val-b.val:b.val-a.val});
+  var maxVal=Math.max.apply(null,items.map(function(s){return s.val}));
+  var minVal=Math.min.apply(null,items.map(function(s){return s.val}));
+  var range=maxVal-minVal||1;
+  var html='';
+  items.forEach(function(s,i){
+    var rankClass=i===0?'gold':i===1?'silver':i===2?'bronze':'other';
+    var barPct=lower?((maxVal-s.val)/range*80+20):((s.val-minVal)/range*80+20);
+    html+='<div class="lb-row"><div class="lb-rank '+rankClass+'">'+(i+1)+'</div><div class="lb-label" style="color:'+s.color+'">'+s.label+'</div><div class="lb-bar-bg"><div class="lb-bar" style="width:'+barPct+'%;background:'+s.color+'"></div></div><div class="lb-value">'+s.val+'<span class="lb-unit">'+unit+'</span></div></div>';
+  });
+  c.innerHTML=html;
+}
+
+function updateSSTable(){
+  var ss=currentSessions();
+  var t=document.getElementById('ssTable');
+  if(!ss.length){t.innerHTML='<tr><td class="empty-msg">No sessions match filters</td></tr>';return}
+  var html='<thead><tr><th></th>';
+  ss.forEach(function(s){html+='<th><span style="color:'+colorForSession(s)+'">&#9679;</span> '+s.label+'</th>'});
+  html+='</tr></thead><tbody>';
+  var ssLo = winStart + 10;
+  var bNames = blockNames(ssLo, winEnd);
+  var rows=[
+    {label:'Avg HR ('+ssLo.toFixed(0)+'-'+winEnd.toFixed(0)+')',fn:function(s){return s.steady_state.steady_hr_avg}},
+    {label:'Min HR ('+ssLo.toFixed(0)+'-'+winEnd.toFixed(0)+')',fn:function(s){return s.steady_state.steady_hr_min}},
+    {label:'Max HR ('+ssLo.toFixed(0)+'-'+winEnd.toFixed(0)+')',fn:function(s){return s.steady_state.steady_hr_max}},
+    {label:'Std Dev',fn:function(s){return s.steady_state.steady_hr_std}},
+    {label:'HR '+bNames[0],fn:function(s){return s.steady_state.block_avgs[0]}},
+    {label:'HR '+bNames[1],fn:function(s){return s.steady_state.block_avgs[1]}},
+    {label:'HR '+bNames[2],fn:function(s){return s.steady_state.block_avgs[2]}},
+    {label:'HR '+bNames[3],fn:function(s){return s.steady_state.block_avgs[3]}},
+    {label:'HR Drift',fn:function(s){var v=s.steady_state.hr_drift;return v!=null?(v>0?'+'+v:v):'N/A'},cls:function(s){var v=s.steady_state.hr_drift;return v!=null?(v>0?'drift-pos':'drift-neg'):''}},
+  ];
+  rows.forEach(function(r){
+    html+='<tr><td>'+r.label+'</td>';
+    ss.forEach(function(s){
+      var v=r.fn(s);
+      var display=v!=null?v:'N/A';
+      var cls=r.cls?r.cls(s):'';
+      html+='<td class="'+cls+'">'+display+'</td>';
+    });
+    html+='</tr>';
+  });
+  html+='</tbody>';
+  t.innerHTML=html;
+}
+
+function updateViz(){
+  var vis = document.getElementById('vizSection');
+  var active = getVisibleSessions();
+  if(active.length){
+    vis.style.display='block';
+    updateSummary();
+    updateHR();
+    updateSpeed();
+    updateCadence();
+    updateDistance();
+    updateHRDist();
+    updateHRZones();
+    updateSteadyState();
+    updateDrift();
+    updateLeaderboard('lbHR',function(s){return s.steady_state.steady_hr_avg||s.stats.hr_avg},'bpm',true);
+    updateLeaderboard('lbCadence',function(s){return s.stats.cadence_avg},'spm',false);
+    updateSSTable();
+  }else{
+    vis.style.display='none';
+  }
+}
+
+// --- Init ---
+loadSessions();
+</script>
+</body>
+</html>
