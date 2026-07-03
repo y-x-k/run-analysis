@@ -1,68 +1,14 @@
 import os
 import json
-import sqlite3
 from datetime import datetime
-from flask import Flask, render_template, request, jsonify, g
+from flask import Flask, render_template, request, jsonify
 import fitparse
 import numpy as np
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
-
-_root = os.path.dirname(__file__)
-_on_vercel = os.environ.get('VERCEL', '') == '1'
-if _on_vercel:
-    _data_dir = '/tmp/data'
-    _upload_dir = '/tmp/uploads'
-else:
-    _data_dir = os.path.join(_root, 'data')
-    _upload_dir = os.path.join(_root, 'uploads')
-
-app.config['UPLOAD_FOLDER'] = _upload_dir
-app.config['DATABASE'] = os.path.join(_data_dir, 'sessions.db')
-os.makedirs(_upload_dir, exist_ok=True)
-os.makedirs(_data_dir, exist_ok=True)
-
-def get_db():
-    if 'db' not in g:
-        g.db = sqlite3.connect(app.config['DATABASE'])
-        g.db.row_factory = sqlite3.Row
-    return g.db
-
-def close_db(e=None):
-    db = g.pop('db', None)
-    if db is not None:
-        db.close()
-
-def init_db():
-    with sqlite3.connect(app.config['DATABASE']) as conn:
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS sessions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                filename TEXT UNIQUE,
-                label TEXT,
-                start_time TEXT,
-                total_distance_m REAL,
-                total_elapsed_time_s REAL,
-                total_calories INTEGER,
-                avg_temperature REAL,
-                session_avg_hr INTEGER,
-                session_max_hr INTEGER,
-                session_avg_cadence INTEGER,
-                session_avg_speed_ms REAL,
-                included INTEGER DEFAULT 1,
-                series TEXT,
-                stats TEXT,
-                steady_state TEXT,
-                hr_zones TEXT,
-                hr_distribution TEXT
-            )
-        ''')
-        conn.commit()
-
-init_db()
-
-app.teardown_appcontext(close_db)
+app.config['UPLOAD_FOLDER'] = '/tmp/uploads' if os.environ.get('VERCEL') == '1' else os.path.join(os.path.dirname(__file__), 'uploads')
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 def parse_fit(path):
     ff = fitparse.FitFile(path)
@@ -234,46 +180,6 @@ def process_fit_file(filepath, filename):
 def index():
     return render_template('index.html')
 
-@app.route('/api/sessions', methods=['GET'])
-def list_sessions():
-    db = get_db()
-    rows = db.execute('SELECT * FROM sessions ORDER BY start_time DESC').fetchall()
-    sessions = []
-    for r in rows:
-        s = dict(r)
-        for key in ['series', 'stats', 'steady_state', 'hr_zones', 'hr_distribution']:
-            if s[key]:
-                s[key] = json.loads(s[key])
-        sessions.append(s)
-    return jsonify(sessions)
-
-@app.route('/api/sessions/<int:session_id>', methods=['PATCH'])
-def update_session(session_id):
-    db = get_db()
-    data = request.get_json()
-    if data is None:
-        return jsonify({'error': 'Invalid JSON'}), 400
-    if 'included' in data:
-        db.execute('UPDATE sessions SET included = ? WHERE id = ?',
-                   (1 if data['included'] else 0, session_id))
-        db.commit()
-        row = db.execute('SELECT * FROM sessions WHERE id = ?', (session_id,)).fetchone()
-        if row is None:
-            return jsonify({'error': 'Session not found'}), 404
-        s = dict(row)
-        for key in ['series', 'stats', 'steady_state', 'hr_zones', 'hr_distribution']:
-            if s[key]:
-                s[key] = json.loads(s[key])
-        return jsonify(s)
-    return jsonify({'error': 'No fields to update'}), 400
-
-@app.route('/api/sessions/<int:session_id>', methods=['DELETE'])
-def delete_session(session_id):
-    db = get_db()
-    db.execute('DELETE FROM sessions WHERE id = ?', (session_id,))
-    db.commit()
-    return jsonify({'ok': True})
-
 @app.route('/api/upload', methods=['POST'])
 def upload_files():
     if 'files' not in request.files:
@@ -291,28 +197,6 @@ def upload_files():
         f.save(save_path)
         try:
             parsed = process_fit_file(save_path, f.filename)
-            db = get_db()
-            stmt = '''
-                INSERT OR REPLACE INTO sessions
-                (filename, label, start_time, total_distance_m, total_elapsed_time_s,
-                 total_calories, avg_temperature, session_avg_hr, session_max_hr,
-                 session_avg_cadence, session_avg_speed_ms, included,
-                 series, stats, steady_state, hr_zones, hr_distribution)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?)
-            '''
-            db.execute(stmt, (
-                parsed['filename'], parsed['label'], parsed['start_time'],
-                parsed['total_distance_m'], parsed['total_elapsed_time_s'],
-                parsed['total_calories'], parsed['avg_temperature'],
-                parsed['session_avg_hr'], parsed['session_max_hr'],
-                parsed['session_avg_cadence'], parsed['session_avg_speed_ms'],
-                json.dumps(parsed['series']), json.dumps(parsed['stats']),
-                json.dumps(parsed['steady_state']), json.dumps(parsed['hr_zones']),
-                json.dumps(parsed['hr_distribution']),
-            ))
-            db.commit()
-            row = db.execute('SELECT id FROM sessions WHERE filename = ?', (parsed['filename'],)).fetchone()
-            parsed['id'] = row['id']
             results.append(parsed)
         except Exception as e:
             errors.append(f"{f.filename}: {str(e)}")

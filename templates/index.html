@@ -361,6 +361,16 @@ uploadZone.addEventListener('drop', function(e){
 });
 fileInput.addEventListener('change', function(){if(this.files.length) handleFiles(this.files)});
 
+function nextId(){
+  var id = parseInt(localStorage.getItem('_nextId') || '1');
+  localStorage.setItem('_nextId', String(id + 1));
+  return id;
+}
+
+function saveSessions(){
+  localStorage.setItem('sessions', JSON.stringify(allSessions));
+}
+
 async function handleFiles(files){
   var formData = new FormData();
   for(var i=0;i<files.length;i++) formData.append('files', files[i]);
@@ -371,10 +381,17 @@ async function handleFiles(files){
     var data = await resp.json();
     if(data.ok){
       var msgs = [];
-      if(data.sessions.length) msgs.push(data.sessions.length+' session(s) parsed successfully');
+      if(data.sessions.length){
+        data.sessions.forEach(function(s, i){ s.id = nextId(); s.included = 1; });
+        allSessions = allSessions.concat(data.sessions);
+        saveSessions();
+        msgs.push(data.sessions.length+' session(s) parsed successfully');
+      }
       if(data.errors.length) msgs.push(data.errors.length+' error(s): '+data.errors.join('; '));
       statusEl.innerHTML = '<span class="upload-success">'+msgs.join('. ')+'</span>';
-      await loadSessions();
+      renderSessions();
+      setupFilters();
+      updateViz();
     }else{
       statusEl.innerHTML = '<span class="upload-error">Upload failed: '+data.error+'</span>';
     }
@@ -384,52 +401,43 @@ async function handleFiles(files){
 }
 
 // --- Load Sessions ---
-async function loadSessions(){
+function loadSessions(){
   try{
-    var resp = await fetch('/api/sessions');
-    allSessions = await resp.json();
-    renderSessions();
-    setupFilters();
-    updateViz();
+    var stored = localStorage.getItem('sessions');
+    allSessions = stored ? JSON.parse(stored) : [];
   }catch(e){
-    console.error('Failed to load sessions', e);
+    allSessions = [];
   }
+  renderSessions();
+  if(allSessions.length){ setupFilters(); updateViz(); }
 }
 
 // --- Session Toggle ---
-async function toggleSession(id){
+function toggleSession(id){
   var s = allSessions.find(function(x){return x.id===id});
   if(!s) return;
   s.included = s.included ? 0 : 1;
-  try{
-    await fetch('/api/sessions/'+id, {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({included:!!s.included})});
-    renderSessions();
-    debouncedUpdateViz();
-  }catch(e){console.error(e)}
+  saveSessions();
+  renderSessions();
+  debouncedUpdateViz();
 }
 
 // --- Delete Session ---
-async function deleteSession(id){
+function deleteSession(id){
   if(!confirm('Delete this session?')) return;
-  try{
-    await fetch('/api/sessions/'+id, {method:'DELETE'});
-    allSessions = allSessions.filter(function(s){return s.id!==id});
-    renderSessions();
-    setupFilters();
-    updateViz();
-  }catch(e){console.error(e)}
+  allSessions = allSessions.filter(function(s){return s.id!==id});
+  saveSessions();
+  renderSessions();
+  setupFilters();
+  updateViz();
 }
 
-async function deleteSelected(){
+function deleteSelected(){
   var selected = allSessions.filter(function(s){return !s.included});
   if(!selected.length) return;
   if(!confirm('Delete '+selected.length+' unselected session(s)?')) return;
-  for(var i=0;i<selected.length;i++){
-    try{
-      await fetch('/api/sessions/'+selected[i].id, {method:'DELETE'});
-    }catch(e){console.error(e)}
-  }
   allSessions = allSessions.filter(function(s){return s.included});
+  saveSessions();
   renderSessions();
   setupFilters();
   updateViz();
@@ -438,12 +446,7 @@ async function deleteSelected(){
 function toggleSelectAll(){
   var checked = document.getElementById('selectAllCheckbox').checked;
   allSessions.forEach(function(s){s.included = checked ? 1 : 0});
-  // Batch update on server
-  allSessions.forEach(async function(s){
-    try{
-      await fetch('/api/sessions/'+s.id, {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({included:!!s.included})});
-    }catch(e){console.error(e)}
-  });
+  saveSessions();
   renderSessions();
   updateViz();
 }
