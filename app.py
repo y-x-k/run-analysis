@@ -7,18 +7,26 @@ import fitparse
 import numpy as np
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(__file__), 'uploads')
-app.config['DATABASE'] = os.path.join(os.path.dirname(__file__), 'data', 'sessions.db')
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-os.makedirs(os.path.dirname(app.config['DATABASE']), exist_ok=True)
-
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
+
+_root = os.path.dirname(__file__)
+_on_vercel = os.environ.get('VERCEL', '') == '1'
+if _on_vercel:
+    _data_dir = '/tmp/data'
+    _upload_dir = '/tmp/uploads'
+else:
+    _data_dir = os.path.join(_root, 'data')
+    _upload_dir = os.path.join(_root, 'uploads')
+
+app.config['UPLOAD_FOLDER'] = _upload_dir
+app.config['DATABASE'] = os.path.join(_data_dir, 'sessions.db')
+os.makedirs(_upload_dir, exist_ok=True)
+os.makedirs(_data_dir, exist_ok=True)
 
 def get_db():
     if 'db' not in g:
         g.db = sqlite3.connect(app.config['DATABASE'])
         g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA journal_mode=WAL")
     return g.db
 
 def close_db(e=None):
